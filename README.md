@@ -186,13 +186,6 @@ This project is open source and available under the [MIT License](LICENSE).
 - Geolocation by [ipapi.co](https://ipapi.co/)
 - Built with [Streamlit](https://streamlit.io/)
 
-## 📧 Contact
-
-Your Name - [@yourusername](https://twitter.com/yourusername)
-
-Project Link: [https://github.com/yourusername/weather-app](https://github.com/yourusername/weather-app)
-
----
 
 **Made with ❤️ using Streamlit**
 
