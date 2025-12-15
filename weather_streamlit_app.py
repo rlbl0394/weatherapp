@@ -1228,28 +1228,80 @@ def generate_ai_overview(location: Dict[str, Any], hourly_slice: List[Dict[str, 
     day1_precip_max = int(max(day1_precip)) if day1_precip else 0
     day2_precip_max = int(max(day2_precip)) if day2_precip else 0
 
-    system_prompt = """You are a helpful weather assistant. Provide clear, actionable weather information in bullet-point format.
-- Start with an overall weather assessment emoji (use ☀️ for good weather, ⛅ for fair, 🌧️ for poor/rainy weather)
-- Use bullet points for each key insight
-- Explain the weather pattern (why is it hot/cold, high/low pressure systems, etc.)
-- Recommend activities suitable for the weather conditions
-- Provide outfit/clothing advice based on temperature and conditions
-- Be concise but informative
-- Use weather-related emojis to make it visual"""
+    # Build detailed hourly breakdown for 48 hours
+    hourly_details = []
+    for idx, h in enumerate(hourly_slice[:48]):
+        temp_f = h.get('temp_f')
+        if temp_f is None:
+            continue
+        
+        # Convert temperature if needed
+        if temp_unit == 'C':
+            temp_display = f"{int(convert_temp(temp_f, to_celsius=True))}°C"
+        else:
+            temp_display = f"{int(temp_f)}°F"
+        
+        precip_prob = h.get('precip_prob', 0)
+        precip_mm = h.get('precip_mm', 0)
+        weather_code = h.get('weather_code', 0)
+        conditions = get_weather_description(weather_code)
+        time_str = h.get('time', '')
+        
+        hourly_details.append(
+            f"Hour {idx+1} ({time_str[-5:] if len(time_str) > 5 else time_str}): {temp_display}, "
+            f"{conditions}, {precip_prob}% rain, {precip_mm:.1f}mm"
+        )
+    
+    # Create comprehensive hourly data string
+    hourly_data_str = "\n".join(hourly_details[:48])  # All 48 hours
 
-    prompt = f"""Provide a comprehensive 2-day weather overview for {city}, {region}.
+    system_prompt = """You are an expert meteorologist providing comprehensive weather analysis. 
 
-Weather Data:
-- Day 1: High {day1_high}{temp_symbol}, Low {day1_low}{temp_symbol}, {day1_precip_max}% rain chance
-- Day 2: High {day2_high}{temp_symbol}, Low {day2_low}{temp_symbol}, {day2_precip_max}% rain chance
+Your analysis should include:
+- **Current Weather Pattern**: Explain atmospheric conditions, pressure systems, fronts
+- **48-Hour Forecast Breakdown**: Detailed timeline with temperature trends and precipitation
+- **Weather Hazards & Alerts**: Any concerning conditions (storms, extreme temps, high winds)
+- **Activity Recommendations**: Best times for outdoor/indoor activities based on conditions
+- **Travel & Clothing Advice**: What to wear, what to bring (umbrella, sunscreen, jacket)
+- **Health & Comfort Tips**: UV exposure, air quality, humidity impacts
 
-Format your response with:
-1. Overall weather condition indicator (emoji + brief assessment)
-2. Weather Pattern Explanation (why these conditions, pressure systems, etc.)
-3. Recommended Activities (indoor/outdoor suggestions based on weather)
-4. Outfit & Weather Advisor (what to wear, what to bring like umbrella, sunglasses, etc.)
+Use professional weather terminology but keep it accessible. Include emojis for visual appeal.
+Format with clear sections using markdown headers (##) and bullet points."""
 
-Keep it under 300 words, use emojis, and be highly actionable."""
+    prompt = f"""Provide a comprehensive meteorological analysis for {city}, {region}, {country} on {today}.
+
+## 48-Hour Detailed Forecast Data:
+
+### Summary Statistics:
+- **Day 1 (Next 24h)**: High {day1_high}{temp_symbol}, Low {day1_low}{temp_symbol}, Max precipitation: {day1_precip_max}%
+- **Day 2 (24-48h)**: High {day2_high}{temp_symbol}, Low {day2_low}{temp_symbol}, Max precipitation: {day2_precip_max}%
+
+### Hour-by-Hour Breakdown (48 Hours):
+{hourly_data_str}
+
+## Required Analysis Sections:
+
+### 1. 🌍 Current Weather Pattern Analysis
+Explain the meteorological conditions causing this weather (high/low pressure, fronts, seasonal patterns, etc.)
+
+### 2. 📅 48-Hour Detailed Timeline
+Break down the forecast into logical time periods (morning, afternoon, evening, night for both days). Highlight key changes.
+
+### 3. ⚠️ Weather Hazards & Alerts
+Identify any concerning conditions: extreme temperatures, heavy precipitation, storms, strong winds, poor visibility
+
+### 4. 🎯 Activity & Travel Recommendations
+- Best times for outdoor activities
+- When to avoid being outside
+- Travel considerations and road conditions
+
+### 5. 👔 Clothing & Gear Advisor
+What to wear and what to bring (layers, umbrella, sunglasses, sunscreen, winter gear, etc.)
+
+### 6. 🏥 Health & Comfort Tips
+UV index concerns, humidity impacts, temperature-related health advice
+
+Be thorough but concise. Use emojis strategically. Format for easy reading."""
 
     def local_overview() -> str:
         """Build a detailed, non-AI 2-day overview from hourly data (next 48 hours).
@@ -1413,8 +1465,8 @@ Keep it under 300 words, use emojis, and be highly actionable."""
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",  # Fast and capable model
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
-            temperature=0.8,
-            max_tokens=400
+            temperature=0.7,
+            max_tokens=2000  # Increased for detailed comprehensive response
         )
         
         http_client.close()
@@ -2697,8 +2749,110 @@ def display_weather(location, weather_data, model_key='default'):
                         ai_result = generate_ai_overview(location, hourly_slice, st.session_state.unit_temp, st.session_state.unit_wind)
                         ai_text = ai_result.get('text', 'Error generating overview')
                         
-                        # Display the AI overview with weather indicator
-                        st.markdown(f"<div style='background: rgba(255,255,255,0.05); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); color:#e0e0e0; line-height: 1.8;'>{ai_text}</div>", unsafe_allow_html=True)
+                        # Display 48-hour detailed timeline as table FIRST
+                        st.markdown("### 📅 48-Hour Detailed Timeline")
+                        
+                        # Build table from hourly data
+                        timeline_data = []
+                        for idx, h in enumerate(hourly_slice[:48]):
+                            temp_f = h.get('temp_f')
+                            if temp_f is None:
+                                continue
+                            
+                            # Convert based on unit preference
+                            if st.session_state.unit_temp == 'C':
+                                temp_display = f"{int(convert_temp(temp_f, to_celsius=True))}°C"
+                            else:
+                                temp_display = f"{int(temp_f)}°F"
+                            
+                            wind_mph = h.get('wind_speed', 0)
+                            if st.session_state.unit_wind == 'kmh':
+                                wind_display = f"{int(convert_wind(wind_mph, to_kmh=True))} km/h"
+                            else:
+                                wind_display = f"{int(wind_mph)} mph"
+                            
+                            time_str = h.get('time', '')
+                            # Format time nicely (show just hour)
+                            try:
+                                from datetime import datetime as dt_parse
+                                dt_obj = dt_parse.fromisoformat(time_str.replace('Z', '+00:00'))
+                                time_display = dt_obj.strftime('%a %I %p')  # e.g., "Mon 3 PM"
+                            except:
+                                time_display = time_str[-5:] if len(time_str) > 5 else time_str
+                            
+                            timeline_data.append({
+                                'Time': time_display,
+                                'Temp': temp_display,
+                                'Conditions': get_weather_description(h.get('weather_code', 0)),
+                                'Precip %': f"{h.get('precip_prob', 0)}%",
+                                'Precip mm': f"{h.get('precip_mm', 0):.1f}",
+                                'Wind': wind_display,
+                                'Humidity': f"{h.get('humidity', 0)}%"
+                            })
+                        
+                        import pandas as pd
+                        timeline_df = pd.DataFrame(timeline_data)
+                        
+                        # Display as interactive table
+                        st.dataframe(timeline_df, use_container_width=True, height=400)
+                        
+                        st.markdown("---")
+                        
+                        # Display the AI overview with proper markdown rendering
+                        st.markdown(ai_text)
+                        
+                        # Create downloadable table data
+                        import pandas as pd
+                        from datetime import datetime as dt
+                        
+                        # Build table from hourly data
+                        table_data = []
+                        for h in hourly_slice[:48]:
+                            temp_f = h.get('temp_f')
+                            if temp_f is None:
+                                continue
+                            
+                            # Convert based on unit preference
+                            if st.session_state.unit_temp == 'C':
+                                temp_display = f"{int(convert_temp(temp_f, to_celsius=True))}°C"
+                            else:
+                                temp_display = f"{int(temp_f)}°F"
+                            
+                            wind_mph = h.get('wind_speed', 0)
+                            if st.session_state.unit_wind == 'kmh':
+                                wind_display = f"{int(convert_wind(wind_mph, to_kmh=True))} km/h"
+                            else:
+                                wind_display = f"{int(wind_mph)} mph"
+                            
+                            table_data.append({
+                                'Time': h.get('time', ''),
+                                'Temperature': temp_display,
+                                'Conditions': get_weather_description(h.get('weather_code', 0)),
+                                'Precipitation Probability': f"{h.get('precip_prob', 0)}%",
+                                'Precipitation Amount': f"{h.get('precip_mm', 0):.1f} mm",
+                                'Wind Speed': wind_display,
+                                'Humidity': f"{h.get('humidity', 0)}%"
+                            })
+                        
+                        df = pd.DataFrame(table_data)
+                        
+                        # Generate filename with location and timestamp
+                        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+                        city_clean = location.get('city', 'Unknown').replace(' ', '_').replace(',', '')
+                        region_clean = location.get('region', '').replace(' ', '_').replace(',', '')
+                        filename = f"Weather_{city_clean}_{region_clean}_{timestamp}.csv"
+                        
+                        # Convert to CSV
+                        csv_data = df.to_csv(index=False)
+                        
+                        # Add download button
+                        st.download_button(
+                            label="📥 Download 48-Hour Forecast (CSV)",
+                            data=csv_data,
+                            file_name=filename,
+                            mime="text/csv",
+                            key=f"download_forecast_{model_key}"
+                        )
                         
                         # Show debug information in expander
                         with st.expander("🛠️ View Prompts & Raw Response", expanded=False):
@@ -2960,7 +3114,73 @@ You can answer questions about current conditions and the 2-day forecast. Be con
                             # Display AI insights
                             if comparison.get('ai_insights'):
                                 st.markdown("### 💡 Travel Insights & Recommendations")
-                                st.markdown(f"<div style='background: rgba(255,255,255,0.05); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); color:#e0e0e0; line-height: 1.8;'>{comparison.get('ai_insights')}</div>", unsafe_allow_html=True)
+                                st.markdown(comparison.get('ai_insights'))
+                            
+                            # Create downloadable report
+                            import pandas as pd
+                            from datetime import datetime as dt
+                            
+                            # Generate filename with both locations and timestamp
+                            timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+                            current_city = location.get('city', 'Current').replace(' ', '_').replace(',', '')
+                            dest_city = dest_location.get('city', 'Destination').replace(' ', '_').replace(',', '')
+                            filename = f"Travel_Compare_{current_city}_vs_{dest_city}_{timestamp}.txt"
+                            
+                            # Build comprehensive report content
+                            report_lines = []
+                            report_lines.append("=" * 80)
+                            report_lines.append("TRAVEL WEATHER COMPARISON REPORT")
+                            report_lines.append("=" * 80)
+                            report_lines.append(f"Generated: {dt.now().strftime('%B %d, %Y at %I:%M %p')}")
+                            report_lines.append("")
+                            
+                            # Location information
+                            report_lines.append("LOCATIONS:")
+                            report_lines.append(f"  Current: {location.get('city')}, {location.get('region')}, {location.get('country')}")
+                            report_lines.append(f"  Destination: {dest_location.get('city')}, {dest_location.get('region')}, {dest_location.get('country')}")
+                            report_lines.append("")
+                            report_lines.append("=" * 80)
+                            
+                            # Add comparison table
+                            if comparison.get('table_data'):
+                                report_lines.append("WEATHER COMPARISON TABLE")
+                                report_lines.append("=" * 80)
+                                report_lines.append("")
+                                
+                                df = pd.DataFrame(comparison['table_data'])
+                                # Convert DataFrame to formatted text table
+                                table_str = df.to_string(index=False)
+                                report_lines.append(table_str)
+                                report_lines.append("")
+                                report_lines.append("=" * 80)
+                            
+                            # Add AI insights
+                            if comparison.get('ai_insights'):
+                                report_lines.append("TRAVEL INSIGHTS & RECOMMENDATIONS")
+                                report_lines.append("=" * 80)
+                                report_lines.append("")
+                                # Remove HTML/markdown formatting for plain text
+                                insights_text = comparison.get('ai_insights', '').replace('**', '').replace('##', '').replace('#', '')
+                                report_lines.append(insights_text)
+                                report_lines.append("")
+                                report_lines.append("=" * 80)
+                            
+                            # Footer
+                            report_lines.append("")
+                            report_lines.append("Report generated by Matt's Weather App")
+                            report_lines.append("Powered by Open-Meteo API and Groq AI")
+                            report_lines.append("")
+                            
+                            report_content = "\n".join(report_lines)
+                            
+                            # Add download button
+                            st.download_button(
+                                label="📥 Download Travel Comparison Report",
+                                data=report_content,
+                                file_name=filename,
+                                mime="text/plain",
+                                key=f"download_travel_{model_key}"
+                            )
                             
                             # Show debug information
                             with st.expander("🛠️ View Comparison Prompts & Raw Response", expanded=False):
