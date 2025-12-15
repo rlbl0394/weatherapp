@@ -2959,6 +2959,41 @@ def display_weather(location, weather_data, model_key='default'):
                         
                         # Display the AI overview with proper markdown rendering
                         st.markdown(ai_text)
+                        
+                        st.markdown("---")
+                        
+                        # Build CSV download from the same table data
+                        csv_data = timeline_df.to_csv(index=False)
+                        
+                        # Generate filename with location and timestamp
+                        from datetime import datetime as dt
+                        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+                        city_clean = location.get('city', 'Unknown').replace(' ', '_').replace(',', '')
+                        region_clean = location.get('region', '').replace(' ', '_').replace(',', '')
+                        filename = f"Weather_{city_clean}_{region_clean}_{timestamp}.csv"
+                        
+                        # Add download button
+                        st.download_button(
+                            label="📥 Download 48-Hour Forecast (CSV)",
+                            data=csv_data,
+                            file_name=filename,
+                            mime="text/csv",
+                            key=f"download_forecast_{model_key}"
+                        )
+                        
+                        # Show debug information in expander
+                        with st.expander("🛠️ View Prompts & Raw Response", expanded=False):
+                            if ai_result.get('system_prompt'):
+                                st.markdown("**System Prompt:**")
+                                st.code(ai_result['system_prompt'], language="text")
+                            
+                            if ai_result.get('prompt'):
+                                st.markdown("**User Prompt:**")
+                                st.code(ai_result['prompt'], language="text")
+                            
+                            if ai_result.get('raw_response'):
+                                st.markdown("**Raw JSON Response:**")
+                                st.code(ai_result['raw_response'], language="json")
                     
                     elif mode == "AI Overview (Narrative Format)":
                         # Use narrative format with day-by-day breakdown
