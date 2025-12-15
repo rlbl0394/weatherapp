@@ -73,8 +73,8 @@ Visit the live app: [Your App URL will be here after deployment]
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/weather-app.git
-cd weather-app
+git clone https://github.com/yourusername/weatherapp.git
+cd weatherapp
 ```
 
 2. Create a virtual environment:
@@ -128,12 +128,12 @@ The app will open in your browser at `http://localhost:8501`
    - Get free API key: [Groq Console](https://console.groq.com/keys)
 
 5. **Your app is live!**
-   - URL will be: `https://yourusername-weather-app.streamlit.app`
+   - URL will be: `https://yourusername-weatherapp.streamlit.app`
 
 ## 📋 Project Structure
 
 ```
-weather-app/
+weatherapp/
 ├── weather_streamlit_app.py    # Main Streamlit application
 ├── weather.py                  # Original CLI version
 ├── requirements.txt            # Python dependencies
@@ -287,7 +287,7 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 📧 Contact
 
-Project Link: [https://github.com/rlbl0394/weather](https://github.com/rlbl0394//weatherapp)
+Project Link: [https://github.com/rlbl0394/weatherapp](https://github.com/rlbl0394//weatherapp)
 
 ---
 
