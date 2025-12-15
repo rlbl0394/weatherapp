@@ -1757,14 +1757,15 @@ def compare_travel_weather(current_location: Dict[str, Any], current_weather: Di
         dest_current = destination_weather.get('current', {})
         
         # Calculate temperature ranges for next 24 hours
-        def get_temp_range(hourly_data, temp_unit):
-            temps = hourly_data.get('temperature_2m', [])[:24]
-            if temps:
-                if temp_unit == 'C':
-                    return f"{int(min(temps))}°C to {int(max(temps))}°C"
-                else:
-                    temps_f = [t * 9/5 + 32 for t in temps]
-                    return f"{int(min(temps_f))}°F to {int(max(temps_f))}°F"
+        # Note: Open-Meteo API returns temps in Fahrenheit (set in get_weather function)
+        def get_temp_range(hourly_data):
+            temps_f = hourly_data.get('temperature_2m', [])[:24]
+            if temps_f:
+                min_f = int(min(temps_f))
+                max_f = int(max(temps_f))
+                min_c = int((min_f - 32) * 5/9)
+                max_c = int((max_f - 32) * 5/9)
+                return f"{min_f}°F ({min_c}°C) to {max_f}°F ({max_c}°C)"
             return "N/A"
         
         def get_precip_info(hourly_data):
@@ -1773,34 +1774,30 @@ def compare_travel_weather(current_location: Dict[str, Any], current_weather: Di
                 return f"{int(max(precip_probs))}%"
             return "N/A"
         
-        def get_current_temp(current_data, temp_unit):
-            temp = current_data.get('temperature_2m', 'N/A')
-            if temp != 'N/A':
-                if temp_unit == 'F':
-                    return f"{int(temp * 9/5 + 32)}°F"
-                else:
-                    return f"{int(temp)}°C"
+        def get_current_temp(current_data):
+            temp_f = current_data.get('temperature_2m', 'N/A')
+            if temp_f != 'N/A':
+                temp_c = int((temp_f - 32) * 5/9)
+                return f"{int(temp_f)}°F ({temp_c}°C)"
             return "N/A"
         
         def get_humidity(current_data):
             hum = current_data.get('relative_humidity_2m', 'N/A')
             return f"{hum}%" if hum != 'N/A' else "N/A"
         
-        def get_wind(current_data, wind_unit):
-            wind = current_data.get('wind_speed_10m', 'N/A')
-            if wind != 'N/A':
-                if wind_unit == 'mph':
-                    return f"{int(wind * 0.621371)} mph"
-                else:
-                    return f"{int(wind)} km/h"
+        def get_wind(current_data):
+            wind_mph = current_data.get('wind_speed_10m', 'N/A')
+            if wind_mph != 'N/A':
+                wind_kmh = int(wind_mph * 1.60934)
+                return f"{int(wind_mph)} mph ({wind_kmh} km/h)"
             return "N/A"
         
         def get_conditions(current_data):
             weather_code = current_data.get('weather_code', 0)
             return get_weather_description(weather_code)
         
-        current_temp_range = get_temp_range(current_hourly, temp_unit)
-        dest_temp_range = get_temp_range(dest_hourly, temp_unit)
+        current_temp_range = get_temp_range(current_hourly)
+        dest_temp_range = get_temp_range(dest_hourly)
         current_precip = get_precip_info(current_hourly)
         dest_precip = get_precip_info(dest_hourly)
         
@@ -1809,19 +1806,19 @@ def compare_travel_weather(current_location: Dict[str, Any], current_weather: Di
             'Metric': ['📍 Location', '🌡️ Current Temp', '📊 24h Range', '💧 Humidity', '💨 Wind Speed', '🌤️ Conditions', '🌧️ Rain Chance (24h)'],
             f'{current_city}': [
                 f"{current_city}, {current_region}",
-                get_current_temp(current_current, temp_unit),
+                get_current_temp(current_current),
                 current_temp_range,
                 get_humidity(current_current),
-                get_wind(current_current, wind_unit),
+                get_wind(current_current),
                 get_conditions(current_current),
                 current_precip
             ],
             f'{dest_city}': [
                 f"{dest_city}, {dest_region}",
-                get_current_temp(dest_current, temp_unit),
+                get_current_temp(dest_current),
                 dest_temp_range,
                 get_humidity(dest_current),
-                get_wind(dest_current, wind_unit),
+                get_wind(dest_current),
                 get_conditions(dest_current),
                 dest_precip
             ]
