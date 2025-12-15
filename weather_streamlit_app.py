@@ -1488,6 +1488,168 @@ Be thorough but concise. Use emojis strategically. Format for easy reading."""
             "system_prompt": system_prompt
         }
 
+def generate_ai_overview_narrative(location: Dict[str, Any], hourly_slice: List[Dict], temp_unit='F', wind_unit='mph') -> Dict[str, Any]:
+    """Use Groq AI to produce a narrative-style weather forecast with day-by-day breakdown.
+    
+    Returns:
+        dict with 'text' (formatted response), 'raw_response' (JSON), 'prompt' (user prompt), 'system_prompt'
+    """
+    # Groq API configuration - load from session state first, then environment variable
+    groq_api_key = st.session_state.get('groq_api_key', '')
+    
+    if not groq_api_key:
+        groq_api_key = os.environ.get('GROQ_API_KEY', '')
+    
+    if not groq_api_key:
+        return {"text": "⚠️ Groq API key not configured. Please set GROQ_API_KEY environment variable.", "raw_response": None, "prompt": None, "system_prompt": None}
+    
+    if not Groq:
+        return {"text": "⚠️ Groq library not installed. Run: pip install groq", "raw_response": None, "prompt": None, "system_prompt": None}
+
+    city = location.get('city', 'Unknown')
+    region = location.get('region', '')
+    country = location.get('country', '')
+    
+    # Get current date for context
+    from datetime import datetime
+    today = datetime.now().strftime('%B %d, %Y')
+
+    if not hourly_slice:
+        return {"text": "AI overview unavailable: missing hourly data.", "raw_response": None, "prompt": None, "system_prompt": None}
+    
+    # Build detailed hourly breakdown for 48 hours
+    hours_blob = []
+    for idx, h in enumerate(hourly_slice[:48]):
+        temp_f = h.get('temp_f')
+        if temp_f is None:
+            continue
+        
+        # Convert temperature if needed
+        if temp_unit == 'C':
+            temp_display = f"{int(convert_temp(temp_f, to_celsius=True))}°C"
+        else:
+            temp_display = f"{int(temp_f)}°F"
+        
+        precip_prob = h.get('precip_prob', 0)
+        precip_mm = h.get('precip_mm', 0)
+        weather_code = h.get('weather_code', 0)
+        conditions = get_weather_description(weather_code)
+        time_str = h.get('time', '')
+        
+        hours_blob.append(
+            f"{time_str}: {temp_display}, {conditions}, Precip: {precip_prob}%, {precip_mm:.1f}mm"
+        )
+    
+    hours_blob_str = "\n".join(hours_blob)
+
+    system_prompt = """You are a professional meteorologist creating detailed weather forecasts in a narrative style. 
+
+Write in complete, natural sentences (not bullet points). Use weather terminology like 'accumulating snow', 'lingering showers', 'tapering off'. Include transitions like 'developing', 'becomes steadier', 'continuing into'.
+
+Break precipitation into 4 time periods with emojis:
+- ☀️ Morning (6 AM - 11 AM)
+- 🌤️ Afternoon (12 PM - 5 PM)  
+- 🌙 Evening (6 PM - 11 PM)
+- 🌃 Night (12 AM - 5 AM)
+
+Call out specific hours with percentages when relevant (e.g., '7 AM: 45% chance', '2 PM: 65% chance').
+
+Use proper formatting with double line breaks between sections and separator lines for organization."""
+
+    prompt = f"""Location: {city}, {region}, {country}
+Date: {today}
+
+HOURLY FORECAST DATA (next 48 hours):
+{hours_blob_str}
+
+Create a comprehensive forecast using this EXACT format:
+
+🌨️ <DayName> — <Full Date (e.g., December 15, 2025)>
+==================================================
+
+**General**
+
+<2-3 complete sentences describing overall conditions, sky cover, and primary weather pattern for the day.>
+
+**Temperatures**
+
+🌡️ High: ~<high°F> (<high°C>)
+
+🌡️ Low: ~<low°F> (<low°C>) overnight
+
+<Additional sentence about temperature feel and trends.>
+
+**Precipitation Timeline**
+
+☀️ **Morning (6 AM - 11 AM):**
+<Natural narrative with specific hours and percentages if precip occurs, or 'No precipitation expected.'>
+
+🌤️ **Afternoon (12 PM - 5 PM):**
+<Natural narrative with specific hours like '2 PM: 65% chance' if precip occurs, or 'Dry conditions.'>
+
+🌙 **Evening (6 PM - 11 PM):**
+<Natural narrative describing evening precip with specific hours and intensity changes, or 'Clear skies.'>
+
+🌃 **Night (12 AM - 5 AM):**
+<Natural narrative describing overnight precip with specific hours, or 'No precipitation overnight.'>
+
+**Winds & Conditions**
+
+<Complete sentences about wind speeds, gusts, and overall comfort conditions based on the data patterns.>
+
+[Repeat exact same format for Day 2]
+
+==================================================
+
+**📊 2-Day Summary**
+
+<DayName>: <One-sentence summary highlighting key weather impacts.>
+
+<DayName>: <One-sentence summary highlighting key weather impacts.>
+
+<Additional summary sentence about overall pattern or temperatures.>
+
+CRITICAL FORMATTING RULES:
+- Use double line breaks between sections
+- Write in complete, natural sentences (not bullet points)
+- Call out specific hours with percentages: '7 AM: 45%', '2 PM: 65% chance'
+- Include transitions: 'developing', 'becomes steadier', 'tapering off'
+- Add separator lines (==================================================) for visual organization"""
+
+    try:
+        # Use Groq AI - ultra-fast inference!
+        import httpx
+        
+        # Create HTTP client with SSL verification disabled
+        http_client = httpx.Client(verify=False, timeout=15.0)
+        client = Groq(api_key=groq_api_key, http_client=http_client)
+        
+        # Generate content with Groq (blazing fast!)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",  # Fast and capable model
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=2000  # Increased for detailed comprehensive response
+        )
+        
+        http_client.close()
+        
+        # Return full response data
+        return {
+            "text": response.choices[0].message.content,
+            "raw_response": response.model_dump_json(indent=2),
+            "prompt": prompt,
+            "system_prompt": system_prompt
+        }
+    except Exception as e:
+        error_msg = f"⚠️ AI unavailable: {str(e)[:80]}"
+        return {
+            "text": error_msg,
+            "raw_response": None,
+            "prompt": prompt,
+            "system_prompt": system_prompt
+        }
+
 def chat_with_weather_ai(user_message: str, weather_context: str) -> Dict[str, Any]:
     """Chat with AI about weather using Groq.
     
@@ -2721,7 +2883,7 @@ def display_weather(location, weather_data, model_key='default'):
     with st.expander("⚡ AI Weather Overview (Groq)", expanded=False):
         mode = st.selectbox(
             "Overview mode",
-            ["AI Overview (Groq)", "Local Detailed (no AI)"], 
+            ["AI Overview (Current Format)", "AI Overview (Narrative Format)", "Local Detailed (no AI)"], 
             key=f"overview_mode_select_{model_key}"
         )
         if weather_data.get('hourly'):
@@ -2744,7 +2906,7 @@ def display_weather(location, weather_data, model_key='default'):
             hourly_slice = build_hourly_summary(hourly, start_idx, hours_to_show=48)
             if st.button("Generate Overview", key=f"overview_{model_key}"):
                 with st.spinner("⚡ Generating AI weather overview with Groq (ultra-fast!)..."):
-                    if mode.startswith("AI Overview"):
+                    if mode == "AI Overview (Current Format)":
                         # Pass current unit preferences
                         ai_result = generate_ai_overview(location, hourly_slice, st.session_state.unit_temp, st.session_state.unit_wind)
                         ai_text = ai_result.get('text', 'Error generating overview')
@@ -2800,12 +2962,18 @@ def display_weather(location, weather_data, model_key='default'):
                         
                         # Display the AI overview with proper markdown rendering
                         st.markdown(ai_text)
+                    
+                    elif mode == "AI Overview (Narrative Format)":
+                        # Use narrative format with day-by-day breakdown
+                        ai_result = generate_ai_overview_narrative(location, hourly_slice, st.session_state.unit_temp, st.session_state.unit_wind)
+                        ai_text = ai_result.get('text', 'Error generating overview')
                         
-                        # Create downloadable table data
-                        import pandas as pd
-                        from datetime import datetime as dt
+                        # Display the narrative AI overview
+                        st.markdown(ai_text)
                         
-                        # Build table from hourly data
+                        st.markdown("---")
+                        
+                        # Build table from hourly data for download
                         table_data = []
                         for h in hourly_slice[:48]:
                             temp_f = h.get('temp_f')
@@ -2834,6 +3002,9 @@ def display_weather(location, weather_data, model_key='default'):
                                 'Humidity': f"{h.get('humidity', 0)}%"
                             })
                         
+                        import pandas as pd
+                        from datetime import datetime as dt
+                        
                         df = pd.DataFrame(table_data)
                         
                         # Generate filename with location and timestamp
@@ -2851,7 +3022,7 @@ def display_weather(location, weather_data, model_key='default'):
                             data=csv_data,
                             file_name=filename,
                             mime="text/csv",
-                            key=f"download_forecast_{model_key}"
+                            key=f"download_forecast_narrative_{model_key}"
                         )
                         
                         # Show debug information in expander
